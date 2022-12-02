@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+  <head>
+    <meta charset="utf-8">
+    <title></title>
+  </head>
+  <body>
+    <div class="">
+      <h4>Private key</h4>
+      <code>
+        -----BEGIN EC PRIVATE KEY-----<br>
+        MIHuAgEAMBAGByqGSM49AgEGBSuBBAAjBIHWMIHTAgEBBEIAcdafX4YwOMHoiC69daiCLsiMWdbKlS4l<br>
+        iGRm50ZFElYwFSBnuzBpl9VUu0B2y/WBxcLU9gpFBtS+CAC9aZFbbKihgYkDgYYABAF3wy/9SwWrsP6/<br>
+        OYEVmz1IjknTKM31ApggR9cOggE7bD2QXeErSYJ6BzziViggTghB2CImMXqwNj9ExGDI/qj8DwACNb0Y<br>
+        Doyacmr/ejf/epir9FUIgl3nU/2XmjMWF5ln64fEQ+ffxdm+dGH1X0TiE5IYUwpT0ZZk65SNZkI8WnF1<br>
+        Bg==<br>
+        -----END EC PRIVATE KEY-----
+      </code>
+
+      <h4>Signature by OpenSSL</h4>
+      <textarea id="openssl-sig" cols="80" rows="5">MIGIAkIBwtkIj1stSoUzjRxKgijzhRp/gthYqg1lcW2iqRSmQ7+GTnKA0ldyoFgJYNRy2DVB6fUfDRsXDf3iSoPHUM+ElYECQgD7G/o9rPZm2pLyexTaFrCrTh4q1YtT7QwbY54ajOfJmrOuS2nMNHaxSXkJq+UvS9Q0XOJhzcZXAlljTx5qMi7pgw==</textarea>
+      <div>
+        <button type="button" name="openssl-check" onclick="check('openssl')">Check</button>
+        <strong>Result: </strong><span id="openssl-res"></span>
+      </div>
+
+      <h4>Signature by Subtle Crypto</h4>
+      <textarea id="js-sig" cols="80" rows="5">AA145AGv12HxyCo+KcWljDzGIVwlPTcpKReNRokmPKzaUuHEsSYLxraeWKIpmIgXZk4584Srm1y1VYalH346cD0YAWTUtv2tdzhAJEIhQ9rdZ9xAWZFlVJrtE7Xh1bQyCGwM30UzHe7X+r9WAzFqIeeVe/0+ZWF8LosC89b7EpA80xdy</textarea>
+      <div>
+        <button type="button" name="js-check" onclick="check('js')">Check</button>
+        <strong>Result: </strong><span id="js-res"></span>
+      </div>
+    </div>
+    <script type="text/javascript" src="https://unpkg.com/requirejs/require.js"></script>
+    <script type="text/javascript">
+      let ASN1;
+
+      require([
+        'https://unpkg.com/@lapo/asn1js/asn1.js'
+      ], function(_ASN1) {
+        ASN1 = _ASN1;
+      });
+
+      function base64Encode(buffer) {
+        return btoa(String.fromCharCode(...new Uint8Array(buffer)));
+      }
+
+      function base64Decode(str) {
+        return new Uint8Array(
+          atob(str)
+            .split('')
+            .map((c) => c.charCodeAt(0))
+        );
+      }
+
+
+      function convertASN1ToP1363(signature) {
+        const buffer = base64Decode(signature);
+        const asn1Signature = ASN1.decode(buffer);
+
+        const rStartPos = asn1Signature.sub[0].posContent();
+        const rEndPos = asn1Signature.sub[0].posEnd();
+        const r = Array.from(buffer.slice(rStartPos, rEndPos));
+
+        const sStartPos = asn1Signature.sub[1].posContent();
+        const sEndPos = asn1Signature.sub[1].posEnd();
+        const s = Array.from(buffer.slice(sStartPos, sEndPos));
+
+        const p1363Signature = [
+          ...(new Array(Math.max(0, 66-r.length)).fill(0)),
+          ...r,
+          ...(new Array(Math.max(0, 66-s.length)).fill(0)),
+          ...s
+        ];
+
+        return base64Encode(p1363Signature);
+      }
+    </script>
+    <script type="text/javascript">
+
+      async function verify(signature) {
+        const publicKey = await window.crypto.subtle.importKey(
+          'jwk',
+          {
+            "crv": "P-521",
+            "ext": true,
+            "key_ops": [
+            "verify"
+            ],
+            "kty": "EC",
+            "x": "AXfDL_1LBauw_r85gRWbPUiOSdMozfUCmCBH1w6CATtsPZBd4StJgnoHPOJWKCBOCEHYIiYxerA2P0TEYMj-qPwP",
+            "y": "AAI1vRgOjJpyav96N_96mKv0VQiCXedT_ZeaMxYXmWfrh8RD59_F2b50YfVfROITkhhTClPRlmTrlI1mQjxacXUG"
+          },
+          { name: 'ECDSA', namedCurve: 'P-521' },
+          false,
+          ['verify']
+        );
+
+        const encodedData = new TextEncoder().encode(JSON.stringify({}));
+        const sig = base64Decode(signature);
+        return window.crypto.subtle.verify(
+          {
+            name: 'ECDSA',
+            hash: { name: 'SHA-512' },
+          },
+          publicKey,
+          sig,
+          encodedData
+        )
+      }
+
+      async function sign() {
+        const privateKey = await window.crypto.subtle.importKey(
+          'pkcs8',
+          base64Decode("MIHuAgEAMBAGByqGSM49AgEGBSuBBAAjBIHWMIHTAgEBBEIAcdafX4YwOMHoiC69daiCLsiMWdbKlS4liGRm50ZFElYwFSBnuzBpl9VUu0B2y/WBxcLU9gpFBtS+CAC9aZFbbKihgYkDgYYABAF3wy/9SwWrsP6/OYEVmz1IjknTKM31ApggR9cOggE7bD2QXeErSYJ6BzziViggTghB2CImMXqwNj9ExGDI/qj8DwACNb0YDoyacmr/ejf/epir9FUIgl3nU/2XmjMWF5ln64fEQ+ffxdm+dGH1X0TiE5IYUwpT0ZZk65SNZkI8WnF1Bg=="),
+          { name: 'ECDSA', namedCurve: 'P-521' },
+          false,
+          ['sign']
+        );
+
+        const encodedData = new TextEncoder().encode(JSON.stringify({}));
+        return window.crypto.subtle.sign(
+          {
+            name: 'ECDSA',
+            hash: { name: 'SHA-512' },
+          },
+          privateKey,
+          encodedData
+        ).then(base64Encode);
+      }
+
+      function check(type) {
+        const sig = document.querySelector(`#${type}-sig`).value;
+        const signature = type === 'js' ? sig : convertASN1ToP1363(sig);
+
+        console.log(`Used signature: ${signature}`);
+
+        verify(signature).then((res) => {
+          document.querySelector(`#${type}-res`).innerText = res ? 'Verified' : 'Failed';
+        })
+      }
+    </script>
+  </body>
+</html>
